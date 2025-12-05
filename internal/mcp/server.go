@@ -270,6 +270,27 @@ func (s *Server) handleToolsList(request *JSONRPCRequest) *JSONRPCResponse {
 				Required: []string{"endpoint"},
 			},
 		},
+		{
+			Name:        "bc_odata_list_endpoints",
+			Description: "List all available OData endpoints in Business Central. This helps discover available entities and APIs.",
+			InputSchema: ToolInputSchema{
+				Type:       "object",
+				Properties: map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "bc_odata_get_metadata",
+			Description: "Get OData metadata for a specific endpoint. Returns entity structure, properties, and relationships.",
+			InputSchema: ToolInputSchema{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"endpoint": map[string]interface{}{
+						"type":        "string",
+						"description": "OData endpoint path (e.g., 'ODV_List', 'BI_Invoices'). Leave empty to get all metadata.",
+					},
+				},
+			},
+		},
 	}
 
 	return &JSONRPCResponse{
@@ -303,6 +324,10 @@ func (s *Server) handleToolCall(ctx context.Context, request *JSONRPCRequest) *J
 		return s.handleGetEntity(ctx, request.ID, params.Arguments)
 	case "bc_odata_count":
 		return s.handleCount(ctx, request.ID, params.Arguments)
+	case "bc_odata_list_endpoints":
+		return s.handleListEndpoints(ctx, request.ID, params.Arguments)
+	case "bc_odata_get_metadata":
+		return s.handleGetMetadata(ctx, request.ID, params.Arguments)
 	default:
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -522,6 +547,153 @@ func (s *Server) handleCount(ctx context.Context, id interface{}, args map[strin
 
 	resultJSON, _ := json.Marshal(map[string]interface{}{
 		"count": len(results),
+	})
+
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: ToolCallResult{
+			Content: []Content{
+				{
+					Type: "text",
+					Text: string(resultJSON),
+				},
+			},
+		},
+	}
+}
+
+// handleListEndpoints lists all available OData endpoints
+func (s *Server) handleListEndpoints(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
+	// Business Central exposes endpoints at the root service document
+	// Try to get the service document which lists all available entity sets
+	resp, err := s.client.Get(ctx, "")
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to retrieve OData service document: %s", err.Error())
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32000,
+				Message: "Failed to list endpoints",
+				Data:    errorMsg,
+			},
+		}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to read service document response: %s", err.Error())
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32000,
+				Message: "Failed to read response",
+				Data:    errorMsg,
+			},
+		}
+	}
+
+	var serviceDoc map[string]interface{}
+	if err := json.Unmarshal(body, &serviceDoc); err != nil {
+		// If it's not JSON, try to parse as XML or return raw
+		resultJSON, _ := json.Marshal(map[string]interface{}{
+			"raw_response": string(body),
+			"content_type": resp.Header.Get("Content-Type"),
+		})
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Result: ToolCallResult{
+				Content: []Content{
+					{
+						Type: "text",
+						Text: string(resultJSON),
+					},
+				},
+			},
+		}
+	}
+
+	// Extract entity sets from service document
+	endpoints := []string{}
+	if value, ok := serviceDoc["value"].([]interface{}); ok {
+		for _, item := range value {
+			if entity, ok := item.(map[string]interface{}); ok {
+				if name, ok := entity["name"].(string); ok {
+					endpoints = append(endpoints, name)
+				}
+			}
+		}
+	}
+
+	resultJSON, _ := json.Marshal(map[string]interface{}{
+		"endpoints":        endpoints,
+		"count":            len(endpoints),
+		"service_document": serviceDoc,
+	})
+
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: ToolCallResult{
+			Content: []Content{
+				{
+					Type: "text",
+					Text: string(resultJSON),
+				},
+			},
+		},
+	}
+}
+
+// handleGetMetadata retrieves OData metadata for endpoints
+func (s *Server) handleGetMetadata(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
+	// Get $metadata endpoint which contains all entity type definitions
+	endpoint := "$metadata"
+	if ep, ok := args["endpoint"].(string); ok && ep != "" {
+		// If specific endpoint provided, try to get its metadata
+		// Business Central might expose metadata per entity, but typically it's all in $metadata
+		endpoint = "$metadata"
+	}
+
+	resp, err := s.client.Get(ctx, endpoint)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to retrieve OData metadata: %s", err.Error())
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32000,
+				Message: "Failed to get metadata",
+				Data:    errorMsg,
+			},
+		}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to read metadata response: %s", err.Error())
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32000,
+				Message: "Failed to read response",
+				Data:    errorMsg,
+			},
+		}
+	}
+
+	// Metadata is typically XML, but we'll return it as text
+	// The LLM can parse it or we could add XML parsing later
+	resultJSON, _ := json.Marshal(map[string]interface{}{
+		"metadata":     string(body),
+		"content_type": resp.Header.Get("Content-Type"),
+		"size_bytes":   len(body),
 	})
 
 	return &JSONRPCResponse{

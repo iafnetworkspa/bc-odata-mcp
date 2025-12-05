@@ -150,6 +150,34 @@ Conta le entità che corrispondono a un filtro.
 }
 ```
 
+#### `bc_odata_list_endpoints`
+Elenca tutti gli endpoint OData disponibili in Business Central. Utile per scoprire entità e API disponibili.
+
+**Parametri:**
+- Nessuno
+
+**Esempio:**
+```json
+{}
+```
+
+**Risposta:**
+Restituisce un array di nomi di endpoint disponibili e il documento di servizio completo.
+
+#### `bc_odata_get_metadata`
+Ottiene i metadati OData per gli endpoint. Include la struttura delle entità, proprietà e relazioni.
+
+**Parametri:**
+- `endpoint` (string, optional): Nome dell'endpoint OData. Se omesso, restituisce tutti i metadati.
+
+**Esempio:**
+```json
+{
+  "endpoint": "ODV_List",
+  "filter": "Document_Type eq 'Order'"
+}
+```
+
 ## Struttura del Progetto
 
 ```

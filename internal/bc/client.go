@@ -301,7 +301,7 @@ func (c *Client) GetPaginated(ctx context.Context, endpoint string) ([]map[strin
 			}
 			// Preserve all original query parameters (filter, select, orderby, top) when adding $skip
 			queryParams := []string{}
-			
+
 			// Parse existing query parameters to preserve them
 			if strings.Contains(currentEndpoint, "?") {
 				queryPart := strings.Split(currentEndpoint, "?")[1]
@@ -321,10 +321,10 @@ func (c *Client) GetPaginated(ctx context.Context, endpoint string) ([]map[strin
 					}
 				}
 			}
-			
+
 			// Add $skip parameter
 			queryParams = append(queryParams, fmt.Sprintf("$skip=%d", skipCount))
-			
+
 			// Rebuild endpoint with all parameters
 			if len(queryParams) > 0 {
 				currentEndpoint = baseEndpoint + "?" + strings.Join(queryParams, "&")
