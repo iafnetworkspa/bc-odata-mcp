@@ -2,7 +2,6 @@
 changelog:
   generator: default
   output: CHANGELOG.md
-  commit: false
 
 plugins:
   - name: commit-analyzer

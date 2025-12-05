@@ -33,8 +33,18 @@ jobs:
         uses: go-semantic-release/action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          ghsr-args: --changelog-generator default --changelog-output CHANGELOG.md --hooks=false
-          version-file: .version
+          changelog-file: CHANGELOG.md
+          hooks: false
+          update-file: .version
+
+      - name: Commit changelog and version file
+        if: steps.semantic-release.outputs.new_release_published == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add CHANGELOG.md .version
+          git commit -m "chore(release): update changelog and version [skip ci]" || exit 0
+          git push
 
       - name: Build binaries
         if: steps.semantic-release.outputs.new_release_published == 'true'
