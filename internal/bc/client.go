@@ -1,6 +1,7 @@
 package bc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -234,7 +235,11 @@ func (c *Client) GetWithRetry(ctx context.Context, endpoint string, maxRetries i
 			Str("response_body", string(bodyBytes)).
 			Str("url", fullURL).
 			Msg("Client error (4xx), not retrying")
-		return nil, fmt.Errorf("client error: %d - %s", resp.StatusCode, string(bodyBytes))
+		
+		// For 4xx errors, return response with body so Query() can parse the error
+		// Recreate the response body from the bytes we read
+		resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		return resp, nil
 	}
 
 	log.Error().

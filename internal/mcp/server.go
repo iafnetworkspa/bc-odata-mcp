@@ -563,10 +563,18 @@ func (s *Server) handleGetEntity(ctx context.Context, id interface{}, args map[s
 		}
 	}
 
-	// Build endpoint with key
-	fullEndpoint := fmt.Sprintf("%s('%s')", endpoint, key)
+	// For endpoints with composite keys (like ODV_List), we use $filter instead of key syntax
+	// This is more reliable for Business Central endpoints
+	// Build OData query string with proper URL encoding
+	queryParams := url.Values{}
+	// Escape single quotes in the key value for OData filter
+	escapedKey := strings.ReplaceAll(key, "'", "''")
+	queryParams.Set("$filter", fmt.Sprintf("No eq '%s'", escapedKey))
+	queryParams.Set("$top", "1")
+	queryString := queryParams.Encode()
+	fullEndpoint := endpoint + "?" + queryString
 
-	// Execute query
+	// Execute query using filter (more reliable for Business Central endpoints with composite keys)
 	results, err := s.client.Query(ctx, fullEndpoint, false)
 	if err != nil {
 		// Provide more descriptive error message
@@ -589,6 +597,7 @@ func (s *Server) handleGetEntity(ctx context.Context, id interface{}, args map[s
 			Error: &JSONRPCError{
 				Code:    -32001,
 				Message: "Entity not found",
+				Data:    fmt.Sprintf("No entity found with key '%s' in endpoint '%s'", key, endpoint),
 			},
 		}
 	}
