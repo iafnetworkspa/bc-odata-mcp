@@ -61,7 +61,7 @@ func (s *Server) Run() error {
 							Data:    err.Error(),
 						},
 					}
-					encoder.Encode(parseError)
+					_ = encoder.Encode(parseError)
 				}
 			}
 			continue
@@ -82,7 +82,7 @@ func (s *Server) Run() error {
 							Data:    err.Error(),
 						},
 					}
-					encoder.Encode(parseError)
+					_ = encoder.Encode(parseError)
 				}
 			}
 			continue
@@ -100,7 +100,7 @@ func (s *Server) Run() error {
 						Data:    "jsonrpc must be '2.0'",
 					},
 				}
-				encoder.Encode(response)
+				_ = encoder.Encode(response)
 			}
 			continue
 		}
