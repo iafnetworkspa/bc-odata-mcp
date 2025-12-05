@@ -500,9 +500,23 @@ func (c *Client) Query(ctx context.Context, endpoint string, includePagination b
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	// Check if response is an error
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Try to parse error response
+		var errorResp map[string]interface{}
+		if jsonErr := json.Unmarshal(body, &errorResp); jsonErr == nil {
+			if errorObj, ok := errorResp["error"].(map[string]interface{}); ok {
+				if message, ok := errorObj["message"].(string); ok {
+					return nil, fmt.Errorf("OData error (status %d): %s", resp.StatusCode, message)
+				}
+			}
+		}
+		return nil, fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(body))
+	}
+
 	var odataResp ODataResponse
 	if err := json.Unmarshal(body, &odataResp); err != nil {
-		return nil, fmt.Errorf("failed to parse OData response: %w", err)
+		return nil, fmt.Errorf("failed to parse OData response: %w (response body: %s)", err, string(body))
 	}
 
 	return odataResp.Value, nil

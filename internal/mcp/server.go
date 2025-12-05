@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -455,42 +456,38 @@ func (s *Server) handleODataQuery(ctx context.Context, id interface{}, args map[
 		}
 	}
 
-	// Build OData query string
-	queryParts := []string{}
+	// Build OData query string with proper URL encoding
+	queryParams := url.Values{}
 
 	if filter, ok := args["filter"].(string); ok && filter != "" {
-		queryParts = append(queryParts, "$filter="+filter)
+		queryParams.Set("$filter", filter)
 	}
 
 	if selectFields, ok := args["select"].(string); ok && selectFields != "" {
-		queryParts = append(queryParts, "$select="+selectFields)
+		queryParams.Set("$select", selectFields)
 	}
 
 	if orderby, ok := args["orderby"].(string); ok && orderby != "" {
-		queryParts = append(queryParts, "$orderby="+orderby)
+		queryParams.Set("$orderby", orderby)
 	}
 
 	if top, ok := args["top"].(float64); ok && top > 0 {
-		queryParts = append(queryParts, fmt.Sprintf("$top=%.0f", top))
+		queryParams.Set("$top", fmt.Sprintf("%.0f", top))
 	}
 
 	if skip, ok := args["skip"].(float64); ok && skip > 0 {
-		queryParts = append(queryParts, fmt.Sprintf("$skip=%.0f", skip))
+		queryParams.Set("$skip", fmt.Sprintf("%.0f", skip))
 	}
 
 	if expand, ok := args["expand"].(string); ok && expand != "" {
-		queryParts = append(queryParts, "$expand="+expand)
+		queryParams.Set("$expand", expand)
 	}
 
-	queryString := ""
-	if len(queryParts) > 0 {
-		queryString = "?" + queryParts[0]
-		for i := 1; i < len(queryParts); i++ {
-			queryString += "&" + queryParts[i]
-		}
+	queryString := queryParams.Encode()
+	fullEndpoint := endpoint
+	if queryString != "" {
+		fullEndpoint = endpoint + "?" + queryString
 	}
-
-	fullEndpoint := endpoint + queryString
 
 	// Check if pagination is requested
 	// If $top is specified, don't use automatic pagination (respect the limit)
@@ -626,13 +623,15 @@ func (s *Server) handleCount(ctx context.Context, id interface{}, args map[strin
 		}
 	}
 
-	// Build OData query string with $count
-	queryString := "?$count=true"
+	// Build OData query string with $count using proper URL encoding
+	queryParams := url.Values{}
+	queryParams.Set("$count", "true")
 	if filter, ok := args["filter"].(string); ok && filter != "" {
-		queryString += "&$filter=" + filter
+		queryParams.Set("$filter", filter)
 	}
 
-	fullEndpoint := endpoint + queryString
+	queryString := queryParams.Encode()
+	fullEndpoint := endpoint + "?" + queryString
 
 	// Execute query
 	results, err := s.client.Query(ctx, fullEndpoint, false)
@@ -913,8 +912,8 @@ func (s *Server) handleAggregate(ctx context.Context, id interface{}, args map[s
 		}
 	}
 
-	// Build OData query string with $apply for aggregations
-	queryParts := []string{}
+	// Build OData query string with $apply for aggregations using proper URL encoding
+	queryParams := url.Values{}
 
 	// Build $apply expression
 	applyParts := []string{}
@@ -923,14 +922,14 @@ func (s *Server) handleAggregate(ctx context.Context, id interface{}, args map[s
 	}
 	applyParts = append(applyParts, fmt.Sprintf("aggregate(%s)", aggregate))
 
-	queryParts = append(queryParts, "$apply="+strings.Join(applyParts, "/"))
+	queryParams.Set("$apply", strings.Join(applyParts, "/"))
 
 	if filter, ok := args["filter"].(string); ok && filter != "" {
-		queryParts = append(queryParts, "$filter="+filter)
+		queryParams.Set("$filter", filter)
 	}
 
-	queryString := "?" + strings.Join(queryParts, "&")
-	fullEndpoint := endpoint + queryString
+	queryString := queryParams.Encode()
+	fullEndpoint := endpoint + "?" + queryString
 
 	// Execute query
 	results, err := s.client.Query(ctx, fullEndpoint, false)
