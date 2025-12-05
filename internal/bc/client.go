@@ -258,23 +258,76 @@ func (c *Client) GetPaginated(ctx context.Context, endpoint string) ([]map[strin
 	skipCount := 0
 	pageNum := 1
 
+	// Check if $top is specified in the endpoint
+	maxResults := -1 // -1 means no limit
+	if strings.Contains(endpoint, "$top=") {
+		// Extract $top value from endpoint
+		topIndex := strings.Index(endpoint, "$top=")
+		if topIndex != -1 {
+			topPart := endpoint[topIndex+5:]
+			// Find where $top value ends (either & or end of string)
+			endIndex := strings.Index(topPart, "&")
+			if endIndex == -1 {
+				endIndex = len(topPart)
+			}
+			topValue := strings.TrimSpace(topPart[:endIndex])
+			if top, err := strconv.Atoi(topValue); err == nil {
+				maxResults = top
+				log.Debug().Int("max_results", maxResults).Msg("Found $top parameter, limiting results")
+			}
+		}
+	}
+
 	// Rate limiting: add delay between requests to avoid hitting rate limits
 	requestDelay := 200 * time.Millisecond
 
 	for {
+		// Check if we've reached the limit specified by $top
+		if maxResults > 0 && len(allResults) >= maxResults {
+			log.Debug().
+				Int("max_results", maxResults).
+				Int("current_results", len(allResults)).
+				Msg("Reached $top limit, stopping pagination")
+			// Trim results to exact limit
+			allResults = allResults[:maxResults]
+			break
+		}
+
 		// Add $skip if we're paginating manually
 		if skipCount > 0 && len(allResults) > 0 {
 			baseEndpoint := currentEndpoint
 			if strings.Contains(currentEndpoint, "?") {
 				baseEndpoint = strings.Split(currentEndpoint, "?")[0]
 			}
-			// Preserve original filter if present
-			if strings.Contains(currentEndpoint, "$filter") {
-				filterPart := strings.Split(currentEndpoint, "$filter")[1]
-				if strings.Contains(filterPart, "&") {
-					filterPart = strings.Split(filterPart, "&")[0]
+			// Preserve all original query parameters (filter, select, orderby, top) when adding $skip
+			queryParams := []string{}
+			
+			// Parse existing query parameters to preserve them
+			if strings.Contains(currentEndpoint, "?") {
+				queryPart := strings.Split(currentEndpoint, "?")[1]
+				// Split by & but be careful with URL encoding
+				params := strings.Split(queryPart, "&")
+				for _, param := range params {
+					// Skip existing $skip if present (we'll add our own)
+					if strings.HasPrefix(param, "$skip=") {
+						continue
+					}
+					// Preserve all other parameters
+					if strings.HasPrefix(param, "$filter=") ||
+						strings.HasPrefix(param, "$select=") ||
+						strings.HasPrefix(param, "$orderby=") ||
+						strings.HasPrefix(param, "$top=") {
+						queryParams = append(queryParams, param)
+					}
 				}
-				currentEndpoint = fmt.Sprintf("%s?$filter=%s&$skip=%d", baseEndpoint, filterPart, skipCount)
+			}
+			
+			// Add $skip parameter
+			queryParams = append(queryParams, fmt.Sprintf("$skip=%d", skipCount))
+			
+			// Rebuild endpoint with all parameters
+			if len(queryParams) > 0 {
+				currentEndpoint = baseEndpoint + "?" + strings.Join(queryParams, "&")
 			} else {
 				currentEndpoint = fmt.Sprintf("%s?$skip=%d", baseEndpoint, skipCount)
 			}
@@ -330,8 +383,28 @@ func (c *Client) GetPaginated(ctx context.Context, endpoint string) ([]map[strin
 			Bool("has_next_link", odataResp.NextLink != "").
 			Msg("Page fetched")
 
+		// Check if we've reached the limit specified by $top after adding this page
+		if maxResults > 0 && len(allResults) >= maxResults {
+			log.Debug().
+				Int("max_results", maxResults).
+				Int("current_results", len(allResults)).
+				Msg("Reached $top limit after fetching page, stopping pagination")
+			// Trim results to exact limit
+			allResults = allResults[:maxResults]
+			break
+		}
+
 		// Check for next link
 		if odataResp.NextLink != "" {
+			// If $top is specified, check if we should continue before following next link
+			if maxResults > 0 && len(allResults) >= maxResults {
+				log.Debug().
+					Int("max_results", maxResults).
+					Int("current_results", len(allResults)).
+					Msg("Reached $top limit, stopping pagination (next link available but limit reached)")
+				allResults = allResults[:maxResults]
+				break
+			}
 			// Extract endpoint from next link (remove base URL)
 			nextURL, err := url.Parse(odataResp.NextLink)
 			if err != nil {
@@ -346,17 +419,51 @@ func (c *Client) GetPaginated(ctx context.Context, endpoint string) ([]map[strin
 			skipCount = 0 // Reset skip count when using next link
 			pageNum++
 		} else {
-			// No next link, check if we got results
+			// No next link - check if we should continue paginating manually
+			// Business Central often doesn't include nextLink even when more data is available
+
+			// If we got no results, we're done
 			if len(odataResp.Value) == 0 {
 				log.Debug().Msg("No more results, pagination complete")
-				break // No more results
-			}
-			// For filtered queries (with $filter), don't try manual pagination
-			if strings.Contains(currentEndpoint, "$filter") {
-				log.Debug().Msg("Filtered query completed, no pagination needed")
 				break
 			}
-			// Try manual pagination with $skip only for non-filtered queries
+
+			// If $top is specified and we've reached it, stop
+			if maxResults > 0 && len(allResults) >= maxResults {
+				log.Debug().
+					Int("max_results", maxResults).
+					Int("current_results", len(allResults)).
+					Msg("Reached $top limit, stopping pagination")
+				allResults = allResults[:maxResults]
+				break
+			}
+
+			// Business Central typically returns 20 results per page when not limited
+			// If we got fewer results than a typical page size, we're likely at the end
+			// However, with $filter, the page size can vary, so we'll try one more page
+			// to be sure, but track if we get the same or fewer results
+			typicalPageSize := 20
+			if len(odataResp.Value) < typicalPageSize {
+				// We got fewer results than typical - might be the last page
+				// Try one more page to confirm, but if we already have results from previous iteration
+				// with same count, we're done
+				if skipCount > 0 {
+					// We're already paginating manually, and got a small page
+					// This likely means we're at the end
+					log.Debug().
+						Int("page_size", len(odataResp.Value)).
+						Int("typical_page_size", typicalPageSize).
+						Msg("Received smaller page than typical, likely at end of results")
+					break
+				}
+			}
+
+			// Continue manual pagination with $skip
+			// This works even with $filter - Business Central supports $skip with filters
+			log.Debug().
+				Int("results_in_page", len(odataResp.Value)).
+				Int("skip_count", skipCount).
+				Msg("No nextLink found, continuing manual pagination with $skip")
 			skipCount += len(odataResp.Value)
 			pageNum++
 		}

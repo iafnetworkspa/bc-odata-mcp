@@ -42,17 +42,83 @@ func (s *Server) Run() error {
 	encoder := json.NewEncoder(os.Stdout)
 
 	for {
-		var request JSONRPCRequest
-		if err := decoder.Decode(&request); err != nil {
+		var rawRequest json.RawMessage
+		if err := decoder.Decode(&rawRequest); err != nil {
 			if err == io.EOF {
 				break
 			}
-			return fmt.Errorf("failed to decode request: %w", err)
+			// For parse errors, try to extract ID from raw JSON if possible
+			// Otherwise, don't send a response (Cursor doesn't accept null ID)
+			var temp map[string]interface{}
+			if json.Unmarshal(rawRequest, &temp) == nil {
+				if id, ok := temp["id"]; ok && id != nil {
+					parseError := &JSONRPCResponse{
+						JSONRPC: "2.0",
+						ID:      id,
+						Error: &JSONRPCError{
+							Code:    -32700,
+							Message: "Parse error",
+							Data:    err.Error(),
+						},
+					}
+					encoder.Encode(parseError)
+				}
+			}
+			continue
+		}
+
+		var request JSONRPCRequest
+		if err := json.Unmarshal(rawRequest, &request); err != nil {
+			// Try to extract ID from raw request
+			var temp map[string]interface{}
+			if json.Unmarshal(rawRequest, &temp) == nil {
+				if id, ok := temp["id"]; ok && id != nil {
+					parseError := &JSONRPCResponse{
+						JSONRPC: "2.0",
+						ID:      id,
+						Error: &JSONRPCError{
+							Code:    -32700,
+							Message: "Parse error",
+							Data:    err.Error(),
+						},
+					}
+					encoder.Encode(parseError)
+				}
+			}
+			continue
+		}
+
+		// Validate request
+		if request.JSONRPC != "2.0" {
+			if request.ID != nil {
+				response := &JSONRPCResponse{
+					JSONRPC: "2.0",
+					ID:      request.ID,
+					Error: &JSONRPCError{
+						Code:    -32600,
+						Message: "Invalid Request",
+						Data:    "jsonrpc must be '2.0'",
+					},
+				}
+				encoder.Encode(response)
+			}
+			continue
+		}
+
+		// Handle notifications (requests without ID) - don't send response
+		if request.ID == nil {
+			// This is a notification, process it but don't send a response
+			s.handleRequest(&request)
+			continue
 		}
 
 		response := s.handleRequest(&request)
-		if err := encoder.Encode(response); err != nil {
-			return fmt.Errorf("failed to encode response: %w", err)
+
+		// Only send response if it's not nil and has a valid ID
+		if response != nil && response.ID != nil {
+			if err := encoder.Encode(response); err != nil {
+				return fmt.Errorf("failed to encode response: %w", err)
+			}
 		}
 	}
 
@@ -63,6 +129,23 @@ func (s *Server) Run() error {
 func (s *Server) handleRequest(request *JSONRPCRequest) *JSONRPCResponse {
 	ctx := context.Background()
 
+	// Validate method is present
+	if request.Method == "" {
+		// Only return error if this is a request (has ID), not a notification
+		if request.ID != nil {
+			return &JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      request.ID,
+				Error: &JSONRPCError{
+					Code:    -32600,
+					Message: "Invalid Request",
+					Data:    "method is required",
+				},
+			}
+		}
+		return nil
+	}
+
 	switch request.Method {
 	case "tools/list":
 		return s.handleToolsList(request)
@@ -70,15 +153,22 @@ func (s *Server) handleRequest(request *JSONRPCRequest) *JSONRPCResponse {
 		return s.handleToolCall(ctx, request)
 	case "initialize":
 		return s.handleInitialize(request)
+	case "initialized":
+		// This is a notification, return nil to indicate no response needed
+		return nil
 	default:
-		return &JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      request.ID,
-			Error: &JSONRPCError{
-				Code:    -32601,
-				Message: "Method not found",
-			},
+		// Only return error if this is a request (has ID), not a notification
+		if request.ID != nil {
+			return &JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      request.ID,
+				Error: &JSONRPCError{
+					Code:    -32601,
+					Message: "Method not found",
+				},
+			}
 		}
+		return nil
 	}
 }
 
@@ -264,7 +354,7 @@ func (s *Server) handleODataQuery(ctx context.Context, id interface{}, args map[
 
 	queryString := ""
 	if len(queryParts) > 0 {
-		queryString = "?" + fmt.Sprintf("%s", queryParts[0])
+		queryString = "?" + queryParts[0]
 		for i := 1; i < len(queryParts); i++ {
 			queryString += "&" + queryParts[i]
 		}
@@ -273,28 +363,37 @@ func (s *Server) handleODataQuery(ctx context.Context, id interface{}, args map[
 	fullEndpoint := endpoint + queryString
 
 	// Check if pagination is requested
+	// If $top is specified, don't use automatic pagination (respect the limit)
 	paginate := false
-	if p, ok := args["paginate"].(bool); ok {
+	hasTop := false
+	if top, ok := args["top"].(float64); ok && top > 0 {
+		hasTop = true
+	}
+
+	// Only use pagination if explicitly requested AND no $top limit is set
+	if p, ok := args["paginate"].(bool); ok && p && !hasTop {
 		paginate = p
 	}
 
 	// Execute query
 	results, err := s.client.Query(ctx, fullEndpoint, paginate)
 	if err != nil {
+		// Provide more descriptive error message
+		errorMsg := fmt.Sprintf("Failed to execute OData query on endpoint '%s': %s", endpoint, err.Error())
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      id,
 			Error: &JSONRPCError{
 				Code:    -32000,
 				Message: "Query execution failed",
-				Data:    err.Error(),
+				Data:    errorMsg,
 			},
 		}
 	}
 
 	resultJSON, _ := json.Marshal(map[string]interface{}{
 		"results": results,
-		"count":  len(results),
+		"count":   len(results),
 	})
 
 	return &JSONRPCResponse{
@@ -343,13 +442,15 @@ func (s *Server) handleGetEntity(ctx context.Context, id interface{}, args map[s
 	// Execute query
 	results, err := s.client.Query(ctx, fullEndpoint, false)
 	if err != nil {
+		// Provide more descriptive error message
+		errorMsg := fmt.Sprintf("Failed to retrieve entity '%s' from endpoint '%s': %s", key, endpoint, err.Error())
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      id,
 			Error: &JSONRPCError{
 				Code:    -32000,
 				Message: "Entity retrieval failed",
-				Data:    err.Error(),
+				Data:    errorMsg,
 			},
 		}
 	}
@@ -406,13 +507,15 @@ func (s *Server) handleCount(ctx context.Context, id interface{}, args map[strin
 	// Execute query
 	results, err := s.client.Query(ctx, fullEndpoint, false)
 	if err != nil {
+		// Provide more descriptive error message
+		errorMsg := fmt.Sprintf("Failed to count entities on endpoint '%s': %s", endpoint, err.Error())
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      id,
 			Error: &JSONRPCError{
 				Code:    -32000,
 				Message: "Count query failed",
-				Data:    err.Error(),
+				Data:    errorMsg,
 			},
 		}
 	}
@@ -434,4 +537,3 @@ func (s *Server) handleCount(ctx context.Context, id interface{}, args map[strin
 		},
 	}
 }
-
