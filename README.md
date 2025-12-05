@@ -172,11 +172,17 @@ Ottiene i metadati OData per gli endpoint. Include la struttura delle entità, p
 
 **Esempio:**
 ```json
+{}
+```
+
+oppure per metadati specifici:
+```json
 {
-  "endpoint": "ODV_List",
-  "filter": "Document_Type eq 'Order'"
+  "endpoint": "ODV_List"
 }
 ```
+
+**Nota:** I metadati sono tipicamente in formato XML e contengono informazioni dettagliate su tutte le entità, proprietà, tipi di dati e relazioni disponibili nel servizio OData.
 
 ## Struttura del Progetto
 
