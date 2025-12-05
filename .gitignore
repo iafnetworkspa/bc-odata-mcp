@@ -31,6 +31,10 @@ cursor-mcp-config.json
 # IDE
 .idea/
 .vscode/
+
+# Semantic release
+.version
+dist/
 *.swp
 *.swo
 *~

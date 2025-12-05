@@ -1,0 +1,89 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [linux, windows, darwin]
+        arch: [amd64, arm64]
+        exclude:
+          - os: windows
+            arch: arm64
+          - os: darwin
+            arch: arm64
+            # Add darwin arm64 separately if needed
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependencies: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          OUTPUT="bc-odata-mcp"
+          if [ "${{ matrix.os }}" == "windows" ]; then
+            OUTPUT="${OUTPUT}.exe"
+          fi
+          go build -v -o ${OUTPUT} ./cmd/server
+          mkdir -p dist
+          mv ${OUTPUT} dist/bc-odata-mcp-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bc-odata-mcp-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/bc-odata-mcp-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
+          retention-days: 7
+
+  build-darwin-arm64:
+    name: Build for darwin-arm64
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependencies: true
+
+      - name: Build
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+        run: |
+          go build -v -o bc-odata-mcp ./cmd/server
+          mkdir -p dist
+          mv bc-odata-mcp dist/bc-odata-mcp-darwin-arm64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bc-odata-mcp-darwin-arm64
+          path: dist/bc-odata-mcp-darwin-arm64
+          retention-days: 7
+

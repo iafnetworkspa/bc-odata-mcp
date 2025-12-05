@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip ci') && !contains(github.event.head_commit.message, 'skip release')"
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run go-semantic-release
+        id: semantic-release
+        uses: go-semantic-release/action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ghsr-args: --changelog-generator default --changelog-output CHANGELOG.md --hooks=false
+          version-file: .version
+
+      - name: Build binaries
+        if: steps.semantic-release.outputs.new_release_published == 'true'
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -o dist/bc-odata-mcp-linux-amd64 ./cmd/server
+          GOOS=linux GOARCH=arm64 go build -o dist/bc-odata-mcp-linux-arm64 ./cmd/server
+          GOOS=windows GOARCH=amd64 go build -o dist/bc-odata-mcp-windows-amd64.exe ./cmd/server
+          GOOS=darwin GOARCH=amd64 go build -o dist/bc-odata-mcp-darwin-amd64 ./cmd/server
+          GOOS=darwin GOARCH=arm64 go build -o dist/bc-odata-mcp-darwin-arm64 ./cmd/server
+
+      - name: Create checksums
+        if: steps.semantic-release.outputs.new_release_published == 'true'
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Upload release artifacts
+        if: steps.semantic-release.outputs.new_release_published == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+          generate_release_notes: true
+          body: |
+            ## Changes
+            
+            ${{ steps.semantic-release.outputs.changelog }}
+            
+            ## Installation
+            
+            Download the appropriate binary for your platform from the assets below.
+            
+            ### Checksums
+            ```
+            ${{ github.event.release.body }}
+            ```
+

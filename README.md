@@ -10,6 +10,8 @@ Un server MCP (Model Context Protocol) in Go che espone tutte le API OData di Mi
 - ✅ Gestione automatica dei retry e rate limiting
 - ✅ Tools MCP per query generiche e operazioni specifiche
 - ✅ Compatibile con Cursor e altri client MCP
+- ✅ CI/CD automatico con GitHub Actions
+- ✅ Semantic Versioning e Changelog automatico
 
 ## Prerequisiti
 
@@ -18,6 +20,8 @@ Un server MCP (Model Context Protocol) in Go che espone tutte le API OData di Mi
 - Accesso alle API OData di Business Central
 
 ## Installazione
+
+### Da Source
 
 1. Clona il repository:
 ```bash
@@ -35,172 +39,114 @@ go mod download
 go build -o bc-odata-mcp ./cmd/server
 ```
 
+### Da Release
+
+Scarica l'ultima release dalla [pagina releases](https://github.com/iafnetworkspa/bc-odata-mcp/releases) e seleziona il binario appropriato per la tua piattaforma.
+
 ## Configurazione
 
-1. Copia il file di esempio della configurazione:
+1. Copia il file di esempio:
 ```bash
 cp config.example.env .env
 ```
 
 2. Modifica `.env` con le tue credenziali Business Central:
 ```env
-BC_CLIENT_ID=your_client_id_here
-BC_CLIENT_SECRET=your_client_secret_here
-BC_SCOPE_API=https://api.businesscentral.dynamics.com/.default
-BC_TOKEN_URL=https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token
-BC_BASE_PATH=https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/api/v2.0/companies({COMPANY_ID})/
-BC_TENANT_ID=your_tenant_id_here
+BC_CLIENT_ID=your_client_id
+BC_CLIENT_SECRET=your_client_secret
+BC_TENANT_ID=your_tenant_id
 BC_ENVIRONMENT=Production
-BC_COMPANY=your_company_id_here
+BC_COMPANY=your_company
+BC_BASE_PATH=https://api.businesscentral.dynamics.com/v2.0
+BC_TOKEN_URL=https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token
+BC_SCOPE_API=https://api.businesscentral.dynamics.com/.default
 ```
 
-**Nota:** Sostituisci `{TENANT_ID}`, `{ENVIRONMENT}`, e `{COMPANY_ID}` con i valori corretti nel `BC_TOKEN_URL` e `BC_BASE_PATH`.
+3. Per Windows PowerShell, puoi anche usare lo script di setup:
+```powershell
+.\setup-bc-env.ps1.example
+```
 
 ## Utilizzo
 
-### Esecuzione diretta
+### Con Cursor
 
-Il server MCP comunica tramite stdin/stdout usando JSON-RPC:
-
-```bash
-./bc-odata-mcp
-```
-
-### Configurazione in Cursor
-
-1. Apri le impostazioni di Cursor
-2. Vai alla sezione MCP Servers
-3. Aggiungi la seguente configurazione:
-
+1. Configura il file MCP di Cursor (`~/.cursor/mcp.json` o `%USERPROFILE%\.cursor\mcp.json`):
 ```json
 {
   "mcpServers": {
     "bc-odata": {
-      "command": "/path/to/bc-odata-mcp",
+      "command": "C:\\path\\to\\bc-odata-mcp.exe",
       "env": {
         "BC_CLIENT_ID": "your_client_id",
         "BC_CLIENT_SECRET": "your_client_secret",
-        "BC_SCOPE_API": "https://api.businesscentral.dynamics.com/.default",
-        "BC_TOKEN_URL": "https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token",
-        "BC_BASE_PATH": "https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/api/v2.0/companies({COMPANY_ID})/",
         "BC_TENANT_ID": "your_tenant_id",
         "BC_ENVIRONMENT": "Production",
-        "BC_COMPANY": "your_company_id",
-        "BC_API_TIMEOUT": "90"
+        "BC_COMPANY": "your_company",
+        "BC_BASE_PATH": "https://api.businesscentral.dynamics.com/v2.0",
+        "BC_TOKEN_URL": "https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token",
+        "BC_SCOPE_API": "https://api.businesscentral.dynamics.com/.default"
       }
     }
   }
 }
 ```
 
-## Tools Disponibili
+2. Riavvia Cursor per caricare il server MCP.
 
-### `bc_odata_query`
+### Tools Disponibili
 
-Esegue una query OData generica contro le API di Business Central.
+Il server espone i seguenti tools MCP:
+
+#### `bc_odata_query`
+Esegue una query OData generica.
 
 **Parametri:**
-- `endpoint` (richiesto): Path dell'endpoint OData (es. 'ODV_List', 'BI_Invoices', 'Customers')
-- `filter` (opzionale): Espressione OData $filter (es. "No eq '12345'")
-- `select` (opzionale): Espressione OData $select per specificare i campi da restituire
-- `orderby` (opzionale): Espressione OData $orderby (es. 'Document_Date desc')
-- `top` (opzionale): Limite del numero di risultati
-- `skip` (opzionale): Numero di risultati da saltare
-- `paginate` (opzionale): Se true, recupera automaticamente tutte le pagine (default: false)
+- `endpoint` (string, required): Nome dell'endpoint OData (es. "ODV_List", "Customers")
+- `filter` (string, optional): Filtro OData (es. "No eq '12345'")
+- `select` (string, optional): Campi da selezionare (es. "No,Name,Amount")
+- `orderby` (string, optional): Ordinamento (es. "Document_Date desc")
+- `top` (number, optional): Limite risultati (es. 10)
+- `skip` (number, optional): Numero di risultati da saltare
+- `paginate` (boolean, optional): Se true, recupera tutte le pagine automaticamente
 
 **Esempio:**
 ```json
 {
-  "name": "bc_odata_query",
-  "arguments": {
-    "endpoint": "BI_Invoices",
-    "filter": "Order_No eq '12345'",
-    "select": "No,Order_No,Amount,Document_Date",
-    "orderby": "Document_Date desc",
-    "top": 10
-  }
+  "endpoint": "ODV_List",
+  "filter": "Document_Type eq 'Order'",
+  "orderby": "Document_Date desc",
+  "top": 10
 }
 ```
 
-### `bc_odata_get_entity`
-
-Recupera un'entità specifica tramite la sua chiave.
+#### `bc_odata_get_entity`
+Recupera un'entità specifica per chiave.
 
 **Parametri:**
-- `endpoint` (richiesto): Path dell'endpoint OData
-- `key` (richiesto): Valore della chiave dell'entità (es. numero ordine, numero fattura)
+- `endpoint` (string, required): Nome dell'endpoint OData
+- `key` (string, required): Valore della chiave
 
 **Esempio:**
 ```json
 {
-  "name": "bc_odata_get_entity",
-  "arguments": {
-    "endpoint": "ODV_List",
-    "key": "25ODV-VI-000291"
-  }
+  "endpoint": "ODV_List",
+  "key": "ORD-001"
 }
 ```
 
-### `bc_odata_count`
-
-Ottiene il conteggio delle entità che corrispondono a un filtro.
+#### `bc_odata_count`
+Conta le entità che corrispondono a un filtro.
 
 **Parametri:**
-- `endpoint` (richiesto): Path dell'endpoint OData
-- `filter` (opzionale): Espressione OData $filter
+- `endpoint` (string, required): Nome dell'endpoint OData
+- `filter` (string, optional): Filtro OData
 
 **Esempio:**
 ```json
 {
-  "name": "bc_odata_count",
-  "arguments": {
-    "endpoint": "BI_Invoices",
-    "filter": "Document_Date ge 2024-01-01"
-  }
-}
-```
-
-## Esempi di Utilizzo
-
-### Query con filtro
-
-Recupera tutte le fatture per un ordine specifico:
-```json
-{
-  "name": "bc_odata_query",
-  "arguments": {
-    "endpoint": "BI_Invoices",
-    "filter": "Order_No eq '25ODV-VI-000291'"
-  }
-}
-```
-
-### Query con paginazione
-
-Recupera tutti gli ordini con paginazione automatica:
-```json
-{
-  "name": "bc_odata_query",
-  "arguments": {
-    "endpoint": "ODV_List",
-    "paginate": true,
-    "orderby": "Document_Date desc"
-  }
-}
-```
-
-### Query con select e orderby
-
-Recupera solo campi specifici ordinati per data:
-```json
-{
-  "name": "bc_odata_query",
-  "arguments": {
-    "endpoint": "BI_Invoices",
-    "select": "No,Order_No,Amount,Document_Date",
-    "orderby": "Document_Date desc",
-    "top": 50
-  }
+  "endpoint": "ODV_List",
+  "filter": "Document_Type eq 'Order'"
 }
 ```
 
@@ -210,17 +156,25 @@ Recupera solo campi specifici ordinati per data:
 bc-odata-mcp/
 ├── cmd/
 │   └── server/
-│       └── main.go          # Entry point del server
+│       └── main.go              # Entry point
 ├── internal/
 │   ├── bc/
-│   │   ├── auth.go          # Gestione autenticazione OAuth 2.0
-│   │   └── client.go        # Client OData con retry e paginazione
+│   │   ├── auth.go              # OAuth 2.0 authentication
+│   │   └── client.go            # OData client
 │   └── mcp/
-│       ├── server.go        # Server MCP principale
-│       └── types.go         # Tipi JSON-RPC e MCP
-├── config.example.env        # File di configurazione di esempio
-├── go.mod                    # Dipendenze Go
-└── README.md                 # Questo file
+│       ├── server.go             # MCP server implementation
+│       ├── types.go              # MCP protocol types
+│       └── server_test.go        # Tests
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                # CI workflow
+│       ├── build.yml             # Build workflow
+│       └── release.yml           # Release workflow
+├── .gsemanticrelease.yml        # Semantic release config
+├── CHANGELOG.md                 # Changelog (auto-generated)
+├── config.example.env           # Example configuration
+├── go.mod                       # Go dependencies
+└── README.md                    # Questo file
 ```
 
 ## Sviluppo
@@ -238,6 +192,22 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./bc-odata-mcp
 ```bash
 go build -ldflags="-s -w" -o bc-odata-mcp ./cmd/server
 ```
+
+### Conventional Commits
+
+Questo progetto usa [Conventional Commits](https://www.conventionalcommits.org/) per il versioning automatico. I commit devono seguire il formato:
+
+- `feat:` per nuove funzionalità (minor version bump)
+- `fix:` per bug fix (patch version bump)
+- `BREAKING CHANGE:` o `!` per breaking changes (major version bump)
+- `chore:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `build:`, `ci:` per altre modifiche
+
+### CI/CD
+
+Il progetto include workflow GitHub Actions per:
+- **CI**: Build, test e lint su ogni push/PR
+- **Build**: Build multi-piattaforma (Linux, Windows, macOS)
+- **Release**: Versioning automatico e generazione changelog basati su Conventional Commits
 
 ## Sicurezza
 
@@ -269,11 +239,14 @@ Il server gestisce automaticamente il rate limiting con retry esponenziali. Se c
 - Ridurre la frequenza delle query
 - Usare la paginazione invece di query multiple
 
+## Changelog
+
+Vedi [CHANGELOG.md](CHANGELOG.md) per la lista completa delle modifiche.
+
 ## Licenza
 
 Questo progetto è fornito "così com'è" per uso interno.
 
 ## Contributi
 
-I contributi sono benvenuti! Per favore apri una issue o una pull request.
-
+I contributi sono benvenuti! Per favore apri una issue o una pull request. Assicurati di seguire le [Conventional Commits](https://www.conventionalcommits.org/) per i messaggi di commit.

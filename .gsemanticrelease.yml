@@ -1,0 +1,46 @@
+# Semantic Release configuration for go-semantic-release
+changelog:
+  generator: default
+  output: CHANGELOG.md
+  commit: false
+
+plugins:
+  - name: commit-analyzer
+    options:
+      releaseRules:
+        - type: feat
+          release: minor
+        - type: fix
+          release: patch
+        - type: perf
+          release: patch
+        - type: refactor
+          release: patch
+        - type: docs
+          release: patch
+        - type: style
+          release: patch
+        - type: test
+          release: patch
+        - type: build
+          release: patch
+        - type: ci
+          release: patch
+        - type: chore
+          release: patch
+        - type: revert
+          release: patch
+        - type: breaking
+          release: major
+        - type: '!'
+          release: major
+  - name: changelog
+    options:
+      changelogFile: CHANGELOG.md
+      changelogTitle: "# Changelog"
+  - name: github
+    options:
+      githubApi: https://api.github.com
+      assets:
+        - dist/bc-odata-mcp-*
+        - dist/checksums.txt
