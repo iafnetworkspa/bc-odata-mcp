@@ -37,6 +37,7 @@ plugins:
     options:
       changelogFile: CHANGELOG.md
       changelogTitle: "# Changelog"
+      unreleased: true
   - name: github
     options:
       githubApi: https://api.github.com
