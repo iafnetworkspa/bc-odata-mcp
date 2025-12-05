@@ -444,6 +444,8 @@ func (s *Server) handleToolCall(ctx context.Context, request *JSONRPCRequest) *J
 		return s.handleUpdate(ctx, request.ID, params.Arguments)
 	case "bc_odata_delete":
 		return s.handleDelete(ctx, request.ID, params.Arguments)
+	case "bc_odata_check_order_status":
+		return s.handleCheckOrderStatus(ctx, request.ID, params.Arguments)
 	default:
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
