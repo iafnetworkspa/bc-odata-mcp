@@ -25,6 +25,9 @@ go.work
 setup-bc-env.ps1
 setup-env.ps1
 
+# Cursor MCP configuration (contains sensitive data)
+cursor-mcp-config.json
+
 # IDE
 .idea/
 .vscode/
