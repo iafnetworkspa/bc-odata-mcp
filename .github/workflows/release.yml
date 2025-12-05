@@ -36,22 +36,24 @@ jobs:
           changelog-file: CHANGELOG.md
           update-file: .version
 
-      - name: Debug outputs
-        run: |
-          echo "new_release_published: ${{ steps.semantic-release.outputs.new_release_published }}"
-          echo "version: ${{ steps.semantic-release.outputs.version }}"
-          ls -la CHANGELOG.md .version 2>/dev/null || echo "Files not found"
-
       - name: Commit changelog and version file
-        if: steps.semantic-release.outputs.new_release_published == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git status
-          git add CHANGELOG.md .version
-          git status
+          # Check if CHANGELOG.md or .version have been modified
+          if git diff --quiet CHANGELOG.md .version 2>/dev/null; then
+            if git diff --cached --quiet CHANGELOG.md .version 2>/dev/null; then
+              echo "No changes to CHANGELOG.md or .version"
+              exit 0
+            fi
+          fi
+          git add CHANGELOG.md .version 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "No staged changes to commit"
+            exit 0
+          fi
           git commit -m "chore(release): update changelog and version [skip ci]" || exit 0
-          git push
+          git push || echo "Push failed or nothing to push"
 
       - name: Build binaries
         if: steps.semantic-release.outputs.new_release_published == 'true'
