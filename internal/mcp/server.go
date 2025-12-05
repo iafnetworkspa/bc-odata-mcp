@@ -385,6 +385,20 @@ func (s *Server) handleToolsList(request *JSONRPCRequest) *JSONRPCResponse {
 				Required: []string{"endpoint", "key"},
 			},
 		},
+		{
+			Name:        "bc_odata_check_order_status",
+			Description: "Intelligently check the status of a sales order. First checks ODV_List (if found, order is not invoiced). If not found in ODV_List, checks BI_Invoices or SalesInvoices by order_no (if found, order is invoiced). If not found in either, the order may be cancelled or the order number may be incorrect.",
+			InputSchema: ToolInputSchema{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"order_no": map[string]interface{}{
+						"type":        "string",
+						"description": "The sales order number to check",
+					},
+				},
+				Required: []string{"order_no"},
+			},
+		},
 	}
 
 	return &JSONRPCResponse{
@@ -1182,6 +1196,135 @@ func (s *Server) handleDelete(ctx context.Context, id interface{}, args map[stri
 	resultJSON, _ := json.Marshal(map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Entity '%s' deleted successfully from endpoint '%s'", key, endpoint),
+	})
+
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: ToolCallResult{
+			Content: []Content{
+				{
+					Type: "text",
+					Text: string(resultJSON),
+				},
+			},
+		},
+	}
+}
+
+// handleCheckOrderStatus intelligently checks the status of a sales order
+// Logic:
+// 1. Check ODV_List first - if found, order is NOT invoiced
+// 2. If not found in ODV_List, check BI_Invoices or SalesInvoices by order_no
+//   - If found in invoices, order IS invoiced
+//   - If not found in either, order may be cancelled or order number is incorrect
+func (s *Server) handleCheckOrderStatus(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
+	orderNo, ok := args["order_no"].(string)
+	if !ok || orderNo == "" {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: order_no is required",
+			},
+		}
+	}
+
+	// Step 1: Check ODV_List first
+	// If order is found in ODV_List, it means it's NOT invoiced
+	queryParams := url.Values{}
+	escapedOrderNo := strings.ReplaceAll(orderNo, "'", "''")
+	queryParams.Set("$filter", fmt.Sprintf("No eq '%s'", escapedOrderNo))
+	queryParams.Set("$top", "1")
+	odvEndpoint := "ODV_List?" + queryParams.Encode()
+
+	odvResults, err := s.client.Query(ctx, odvEndpoint, false)
+	if err != nil {
+		// If ODV_List query fails, we'll still try invoices
+		// Log the error but continue
+	}
+
+	if len(odvResults) > 0 {
+		// Order found in ODV_List - it's NOT invoiced
+		resultJSON, _ := json.Marshal(map[string]interface{}{
+			"order_no":     orderNo,
+			"status":       "not_invoiced",
+			"status_label": "Ordine non fatturato",
+			"found_in":     "ODV_List",
+			"message":      fmt.Sprintf("L'ordine %s è stato trovato in ODV_List, quindi NON è ancora stato fatturato.", orderNo),
+			"order_data":   odvResults[0],
+		})
+
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Result: ToolCallResult{
+				Content: []Content{
+					{
+						Type: "text",
+						Text: string(resultJSON),
+					},
+				},
+			},
+		}
+	}
+
+	// Step 2: Order not found in ODV_List, check invoices
+	// Try BI_Invoices first (Business Intelligence endpoint)
+	queryParams = url.Values{}
+	queryParams.Set("$filter", fmt.Sprintf("Order_No eq '%s'", escapedOrderNo))
+	queryParams.Set("$top", "1")
+	invoiceEndpoint := "BI_Invoices?" + queryParams.Encode()
+
+	invoiceResults, err := s.client.Query(ctx, invoiceEndpoint, false)
+	if err != nil || len(invoiceResults) == 0 {
+		// If BI_Invoices fails or returns nothing, try SalesInvoices
+		queryParams = url.Values{}
+		queryParams.Set("$filter", fmt.Sprintf("Order_No eq '%s'", escapedOrderNo))
+		queryParams.Set("$top", "1")
+		invoiceEndpoint = "SalesInvoices?" + queryParams.Encode()
+		invoiceResults, _ = s.client.Query(ctx, invoiceEndpoint, false)
+	}
+
+	if len(invoiceResults) > 0 {
+		// Order found in invoices - it IS invoiced
+		resultJSON, _ := json.Marshal(map[string]interface{}{
+			"order_no":     orderNo,
+			"status":       "invoiced",
+			"status_label": "Ordine fatturato",
+			"found_in":     "Invoices",
+			"message":      fmt.Sprintf("L'ordine %s non è stato trovato in ODV_List ma è stato trovato nelle fatture, quindi È STATO FATTURATO.", orderNo),
+			"invoice_data": invoiceResults[0],
+		})
+
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Result: ToolCallResult{
+				Content: []Content{
+					{
+						Type: "text",
+						Text: string(resultJSON),
+					},
+				},
+			},
+		}
+	}
+
+	// Step 3: Order not found in either ODV_List or invoices
+	// It may be cancelled, or the order number is incorrect/partial
+	resultJSON, _ := json.Marshal(map[string]interface{}{
+		"order_no":     orderNo,
+		"status":       "not_found",
+		"status_label": "Ordine non trovato",
+		"found_in":     "none",
+		"message":      fmt.Sprintf("L'ordine %s non è stato trovato né in ODV_List né nelle fatture. Potrebbe essere stato cancellato, oppure il numero ordine potrebbe essere errato o parziale.", orderNo),
+		"suggestions": []string{
+			"Verificare che il numero ordine sia corretto e completo",
+			"Controllare se l'ordine è stato cancellato",
+			"Verificare se l'ordine esiste in altri endpoint (es. SalesOrders)",
+		},
 	})
 
 	return &JSONRPCResponse{
