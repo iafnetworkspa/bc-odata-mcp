@@ -9,10 +9,10 @@
         "BC_SCOPE_API": "https://api.businesscentral.dynamics.com/.default",
         "BC_TOKEN_URL": "https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token",
         "BC_CONTENT_TYPE": "application/x-www-form-urlencoded",
-        "BC_BASE_PATH": "https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/api/v2.0/companies({COMPANY_ID})/",
+        "BC_BASE_PATH": "https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/ODataV4/Company('Company%20Name')/",
         "BC_TENANT_ID": "your_tenant_id_here",
         "BC_ENVIRONMENT": "Production",
-        "BC_COMPANY": "your_company_id_here",
+        "BC_COMPANY": "Your Company Name",
         "BC_API_TIMEOUT": "90"
       }
     }

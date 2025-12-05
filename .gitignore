@@ -22,6 +22,8 @@ go.work
 .env
 .env.local
 *.env
+setup-bc-env.ps1
+setup-env.ps1
 
 # IDE
 .idea/

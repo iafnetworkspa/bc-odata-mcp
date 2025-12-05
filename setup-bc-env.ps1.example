@@ -1,0 +1,18 @@
+# Business Central Environment Variables
+# Copy this file to setup-bc-env.ps1 and fill in your actual values
+# Then run: . .\setup-bc-env.ps1
+
+$env:BC_GRANT_TYPE = "client_credentials"
+$env:BC_CLIENT_ID = "your-client-id-here"
+$env:BC_CLIENT_SECRET = "your-client-secret-here"
+$env:BC_SCOPE_API = "https://api.businesscentral.dynamics.com/.default"
+$env:BC_TOKEN_URL = "https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+$env:BC_CONTENT_TYPE = "application/x-www-form-urlencoded"
+$env:BC_BASE_PATH = "https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/ODataV4/Company('Company%20Name')/"
+$env:BC_TENANT_ID = "your-tenant-id-here"
+$env:BC_ENVIRONMENT = "Production"
+$env:BC_COMPANY = "Your Company Name"
+$env:BC_API_TIMEOUT = "90"
+
+Write-Host "Business Central environment variables set"
+
