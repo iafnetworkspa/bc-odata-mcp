@@ -43,3 +43,6 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Test scripts (move to test/ directory)
+test/*.ps1
+
