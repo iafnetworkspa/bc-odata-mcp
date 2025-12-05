@@ -764,7 +764,7 @@ func (s *Server) handleListEndpoints(ctx context.Context, id interface{}, args m
 	}
 
 	var rootResponse map[string]interface{}
-	json.Unmarshal(body, &rootResponse)
+	_ = json.Unmarshal(body, &rootResponse) // Ignore error, root response is optional
 
 	resultJSON, _ := json.Marshal(map[string]interface{}{
 		"endpoints":     commonEndpoints,
