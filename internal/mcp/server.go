@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/iafnetworkspa/bc-odata-mcp/internal/bc"
 	"github.com/rs/zerolog"
@@ -230,6 +231,10 @@ func (s *Server) handleToolsList(request *JSONRPCRequest) *JSONRPCResponse {
 						"description": "Whether to automatically paginate through all results (default: false)",
 						"default":     false,
 					},
+					"expand": map[string]interface{}{
+						"type":        "string",
+						"description": "OData $expand expression to include related entities (e.g., 'Customer,Items')",
+					},
 				},
 				Required: []string{"endpoint"},
 			},
@@ -291,6 +296,94 @@ func (s *Server) handleToolsList(request *JSONRPCRequest) *JSONRPCResponse {
 				},
 			},
 		},
+		{
+			Name:        "bc_odata_aggregate",
+			Description: "Perform aggregations on OData endpoints. Supports sum, avg, min, max, count with optional grouping.",
+			InputSchema: ToolInputSchema{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"endpoint": map[string]interface{}{
+						"type":        "string",
+						"description": "OData endpoint path (e.g., 'ODV_List', 'BI_Invoices')",
+					},
+					"aggregate": map[string]interface{}{
+						"type":        "string",
+						"description": "Aggregation expression (e.g., 'Amount with sum as TotalAmount,Amount with avg as AvgAmount')",
+					},
+					"groupby": map[string]interface{}{
+						"type":        "string",
+						"description": "Fields to group by (e.g., 'Document_Type,Status')",
+					},
+					"filter": map[string]interface{}{
+						"type":        "string",
+						"description": "OData $filter expression to filter data before aggregation",
+					},
+				},
+				Required: []string{"endpoint", "aggregate"},
+			},
+		},
+		{
+			Name:        "bc_odata_create",
+			Description: "Create a new entity in Business Central. Supports POST operations for writable endpoints.",
+			InputSchema: ToolInputSchema{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"endpoint": map[string]interface{}{
+						"type":        "string",
+						"description": "OData endpoint path where to create the entity",
+					},
+					"data": map[string]interface{}{
+						"type":        "object",
+						"description": "Entity data as key-value pairs",
+					},
+				},
+				Required: []string{"endpoint", "data"},
+			},
+		},
+		{
+			Name:        "bc_odata_update",
+			Description: "Update an existing entity in Business Central. Supports PATCH operations.",
+			InputSchema: ToolInputSchema{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"endpoint": map[string]interface{}{
+						"type":        "string",
+						"description": "OData endpoint path",
+					},
+					"key": map[string]interface{}{
+						"type":        "string",
+						"description": "The key value of the entity to update",
+					},
+					"data": map[string]interface{}{
+						"type":        "object",
+						"description": "Fields to update as key-value pairs",
+					},
+					"etag": map[string]interface{}{
+						"type":        "string",
+						"description": "ETag for optimistic concurrency control (optional)",
+					},
+				},
+				Required: []string{"endpoint", "key", "data"},
+			},
+		},
+		{
+			Name:        "bc_odata_delete",
+			Description: "Delete an entity from Business Central. Supports DELETE operations.",
+			InputSchema: ToolInputSchema{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"endpoint": map[string]interface{}{
+						"type":        "string",
+						"description": "OData endpoint path",
+					},
+					"key": map[string]interface{}{
+						"type":        "string",
+						"description": "The key value of the entity to delete",
+					},
+				},
+				Required: []string{"endpoint", "key"},
+			},
+		},
 	}
 
 	return &JSONRPCResponse{
@@ -328,6 +421,14 @@ func (s *Server) handleToolCall(ctx context.Context, request *JSONRPCRequest) *J
 		return s.handleListEndpoints(ctx, request.ID, params.Arguments)
 	case "bc_odata_get_metadata":
 		return s.handleGetMetadata(ctx, request.ID, params.Arguments)
+	case "bc_odata_aggregate":
+		return s.handleAggregate(ctx, request.ID, params.Arguments)
+	case "bc_odata_create":
+		return s.handleCreate(ctx, request.ID, params.Arguments)
+	case "bc_odata_update":
+		return s.handleUpdate(ctx, request.ID, params.Arguments)
+	case "bc_odata_delete":
+		return s.handleDelete(ctx, request.ID, params.Arguments)
 	default:
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -375,6 +476,10 @@ func (s *Server) handleODataQuery(ctx context.Context, id interface{}, args map[
 
 	if skip, ok := args["skip"].(float64); ok && skip > 0 {
 		queryParts = append(queryParts, fmt.Sprintf("$skip=%.0f", skip))
+	}
+
+	if expand, ok := args["expand"].(string); ok && expand != "" {
+		queryParts = append(queryParts, "$expand="+expand)
 	}
 
 	queryString := ""
@@ -565,18 +670,65 @@ func (s *Server) handleCount(ctx context.Context, id interface{}, args map[strin
 
 // handleListEndpoints lists all available OData endpoints
 func (s *Server) handleListEndpoints(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
-	// Business Central exposes endpoints at the root service document
-	// Try to get the service document which lists all available entity sets
+	// Business Central OData v4 structure:
+	// - Root endpoint returns Company info
+	// - To get entity list, we need to parse $metadata XML or try common endpoints
+	// - Common endpoints in BC: ODV_List, Customers, Items, SalesOrders, PurchaseOrders, etc.
+
+	// First, try to get metadata which contains all entity definitions
+	// Metadata is at tenant/environment level, not company level
+	// We'll need to construct the metadata URL differently
+
+	// For now, return a list of common Business Central endpoints
+	// and suggest using get_metadata to discover more
+	commonEndpoints := []string{
+		"ODV_List",
+		"Customers",
+		"Items",
+		"SalesOrders",
+		"PurchaseOrders",
+		"SalesInvoices",
+		"PurchaseInvoices",
+		"SalesQuotes",
+		"PurchaseQuotes",
+		"SalesCreditMemos",
+		"PurchaseCreditMemos",
+		"SalesShipments",
+		"PurchaseReceipts",
+		"Vendors",
+		"Employees",
+		"GLAccounts",
+		"Journals",
+		"JournalLines",
+		"BI_Invoices",
+		"BI_Customers",
+		"BI_Items",
+		"BI_Vendors",
+		"BI_GLAccounts",
+		"BI_SalesOrders",
+		"BI_PurchaseOrders",
+	}
+
+	// Try to get root endpoint to see what we get
 	resp, err := s.client.Get(ctx, "")
 	if err != nil {
-		errorMsg := fmt.Sprintf("Failed to retrieve OData service document: %s", err.Error())
+		// If root fails, just return common endpoints
+		resultJSON, _ := json.Marshal(map[string]interface{}{
+			"endpoints": commonEndpoints,
+			"count":     len(commonEndpoints),
+			"note":      "Common Business Central endpoints. Use bc_odata_get_metadata to discover all available endpoints.",
+			"error":     fmt.Sprintf("Could not query root endpoint: %s", err.Error()),
+		})
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      id,
-			Error: &JSONRPCError{
-				Code:    -32000,
-				Message: "Failed to list endpoints",
-				Data:    errorMsg,
+			Result: ToolCallResult{
+				Content: []Content{
+					{
+						Type: "text",
+						Text: string(resultJSON),
+					},
+				},
 			},
 		}
 	}
@@ -584,24 +736,10 @@ func (s *Server) handleListEndpoints(ctx context.Context, id interface{}, args m
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		errorMsg := fmt.Sprintf("Failed to read service document response: %s", err.Error())
-		return &JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      id,
-			Error: &JSONRPCError{
-				Code:    -32000,
-				Message: "Failed to read response",
-				Data:    errorMsg,
-			},
-		}
-	}
-
-	var serviceDoc map[string]interface{}
-	if err := json.Unmarshal(body, &serviceDoc); err != nil {
-		// If it's not JSON, try to parse as XML or return raw
 		resultJSON, _ := json.Marshal(map[string]interface{}{
-			"raw_response": string(body),
-			"content_type": resp.Header.Get("Content-Type"),
+			"endpoints": commonEndpoints,
+			"count":     len(commonEndpoints),
+			"note":      "Common Business Central endpoints. Use bc_odata_get_metadata to discover all available endpoints.",
 		})
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -617,22 +755,15 @@ func (s *Server) handleListEndpoints(ctx context.Context, id interface{}, args m
 		}
 	}
 
-	// Extract entity sets from service document
-	endpoints := []string{}
-	if value, ok := serviceDoc["value"].([]interface{}); ok {
-		for _, item := range value {
-			if entity, ok := item.(map[string]interface{}); ok {
-				if name, ok := entity["name"].(string); ok {
-					endpoints = append(endpoints, name)
-				}
-			}
-		}
-	}
+	var rootResponse map[string]interface{}
+	json.Unmarshal(body, &rootResponse)
 
 	resultJSON, _ := json.Marshal(map[string]interface{}{
-		"endpoints":        endpoints,
-		"count":            len(endpoints),
-		"service_document": serviceDoc,
+		"endpoints":     commonEndpoints,
+		"count":         len(commonEndpoints),
+		"root_response": rootResponse,
+		"note":          "Common Business Central endpoints. Use bc_odata_get_metadata to discover all available endpoints and their structure.",
+		"discovery_tip": "Try querying endpoints with $top=1 to see their structure, or use bc_odata_get_metadata for complete schema information.",
 	})
 
 	return &JSONRPCResponse{
@@ -651,24 +782,69 @@ func (s *Server) handleListEndpoints(ctx context.Context, id interface{}, args m
 
 // handleGetMetadata retrieves OData metadata for endpoints
 func (s *Server) handleGetMetadata(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
-	// Get $metadata endpoint which contains all entity type definitions
+	// Business Central $metadata is at tenant/environment level, not company level
+	// The baseURL includes company, so we need to construct metadata URL differently
+	// Metadata URL format: {base}/v2.0/{tenant}/{environment}/ODataV4/$metadata
+
+	// Try to get metadata - if it fails, try to get structure from a sample query
 	endpoint := "$metadata"
-	if ep, ok := args["endpoint"].(string); ok && ep != "" {
-		// If specific endpoint provided, try to get its metadata
-		// Business Central might expose metadata per entity, but typically it's all in $metadata
-		endpoint = "$metadata"
-	}
 
 	resp, err := s.client.Get(ctx, endpoint)
 	if err != nil {
-		errorMsg := fmt.Sprintf("Failed to retrieve OData metadata: %s", err.Error())
+		// If metadata endpoint fails, try to get structure from a sample query
+		// Query a known endpoint with $top=1 to infer structure
+		sampleEndpoint := "ODV_List"
+		if ep, ok := args["endpoint"].(string); ok && ep != "" {
+			sampleEndpoint = ep
+		}
+
+		// Get sample data to infer structure
+		results, queryErr := s.client.Query(ctx, sampleEndpoint+"?$top=1", false)
+		if queryErr != nil {
+			errorMsg := fmt.Sprintf("Failed to retrieve metadata and sample query also failed. Metadata error: %s, Query error: %s", err.Error(), queryErr.Error())
+			return &JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      id,
+				Error: &JSONRPCError{
+					Code:    -32000,
+					Message: "Failed to get metadata",
+					Data:    errorMsg,
+				},
+			}
+		}
+
+		// Return inferred structure from sample
+		var sampleFields []string
+		if len(results) > 0 {
+			for key := range results[0] {
+				sampleFields = append(sampleFields, key)
+			}
+		}
+
+		var sampleRecord interface{}
+		if len(results) > 0 {
+			sampleRecord = results[0]
+		}
+
+		resultJSON, _ := json.Marshal(map[string]interface{}{
+			"endpoint":      sampleEndpoint,
+			"metadata_note": "Could not access $metadata endpoint (may require tenant-level access). Showing inferred structure from sample query.",
+			"sample_fields": sampleFields,
+			"field_count":   len(sampleFields),
+			"sample_record": sampleRecord,
+			"tip":           "Use bc_odata_query with $top=1 on any endpoint to see its structure. Metadata endpoint may require different authentication scope.",
+		})
+
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      id,
-			Error: &JSONRPCError{
-				Code:    -32000,
-				Message: "Failed to get metadata",
-				Data:    errorMsg,
+			Result: ToolCallResult{
+				Content: []Content{
+					{
+						Type: "text",
+						Text: string(resultJSON),
+					},
+				},
 			},
 		}
 	}
@@ -694,6 +870,310 @@ func (s *Server) handleGetMetadata(ctx context.Context, id interface{}, args map
 		"metadata":     string(body),
 		"content_type": resp.Header.Get("Content-Type"),
 		"size_bytes":   len(body),
+		"note":         "Metadata is in XML format. Contains all entity type definitions, properties, and relationships.",
+	})
+
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: ToolCallResult{
+			Content: []Content{
+				{
+					Type: "text",
+					Text: string(resultJSON),
+				},
+			},
+		},
+	}
+}
+
+// handleAggregate performs aggregations on OData endpoints
+func (s *Server) handleAggregate(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
+	endpoint, ok := args["endpoint"].(string)
+	if !ok {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: endpoint is required",
+			},
+		}
+	}
+
+	aggregate, ok := args["aggregate"].(string)
+	if !ok || aggregate == "" {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: aggregate is required",
+			},
+		}
+	}
+
+	// Build OData query string with $apply for aggregations
+	queryParts := []string{}
+
+	// Build $apply expression
+	applyParts := []string{}
+	if groupby, ok := args["groupby"].(string); ok && groupby != "" {
+		applyParts = append(applyParts, fmt.Sprintf("groupby((%s))", groupby))
+	}
+	applyParts = append(applyParts, fmt.Sprintf("aggregate(%s)", aggregate))
+
+	queryParts = append(queryParts, "$apply="+strings.Join(applyParts, "/"))
+
+	if filter, ok := args["filter"].(string); ok && filter != "" {
+		queryParts = append(queryParts, "$filter="+filter)
+	}
+
+	queryString := "?" + strings.Join(queryParts, "&")
+	fullEndpoint := endpoint + queryString
+
+	// Execute query
+	results, err := s.client.Query(ctx, fullEndpoint, false)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to execute aggregation on endpoint '%s': %s", endpoint, err.Error())
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32000,
+				Message: "Aggregation failed",
+				Data:    errorMsg,
+			},
+		}
+	}
+
+	resultJSON, _ := json.Marshal(map[string]interface{}{
+		"results": results,
+		"count":   len(results),
+	})
+
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: ToolCallResult{
+			Content: []Content{
+				{
+					Type: "text",
+					Text: string(resultJSON),
+				},
+			},
+		},
+	}
+}
+
+// handleCreate creates a new entity
+func (s *Server) handleCreate(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
+	endpoint, ok := args["endpoint"].(string)
+	if !ok {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: endpoint is required",
+			},
+		}
+	}
+
+	data, ok := args["data"].(map[string]interface{})
+	if !ok {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: data is required and must be an object",
+			},
+		}
+	}
+
+	// Convert data to JSON
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: failed to serialize data",
+				Data:    err.Error(),
+			},
+		}
+	}
+
+	// Create entity using POST
+	result, err := s.client.Post(ctx, endpoint, jsonData)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to create entity in endpoint '%s': %s", endpoint, err.Error())
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32000,
+				Message: "Create operation failed",
+				Data:    errorMsg,
+			},
+		}
+	}
+
+	resultJSON, _ := json.Marshal(result)
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: ToolCallResult{
+			Content: []Content{
+				{
+					Type: "text",
+					Text: string(resultJSON),
+				},
+			},
+		},
+	}
+}
+
+// handleUpdate updates an existing entity
+func (s *Server) handleUpdate(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
+	endpoint, ok := args["endpoint"].(string)
+	if !ok {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: endpoint is required",
+			},
+		}
+	}
+
+	key, ok := args["key"].(string)
+	if !ok {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: key is required",
+			},
+		}
+	}
+
+	data, ok := args["data"].(map[string]interface{})
+	if !ok {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: data is required and must be an object",
+			},
+		}
+	}
+
+	// Convert data to JSON
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: failed to serialize data",
+				Data:    err.Error(),
+			},
+		}
+	}
+
+	// Build endpoint with key
+	fullEndpoint := fmt.Sprintf("%s('%s')", endpoint, key)
+
+	// Get ETag if provided for optimistic concurrency
+	var etag string
+	if e, ok := args["etag"].(string); ok {
+		etag = e
+	}
+
+	// Update entity using PATCH
+	result, err := s.client.Patch(ctx, fullEndpoint, jsonData, etag)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to update entity '%s' in endpoint '%s': %s", key, endpoint, err.Error())
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32000,
+				Message: "Update operation failed",
+				Data:    errorMsg,
+			},
+		}
+	}
+
+	resultJSON, _ := json.Marshal(result)
+	return &JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: ToolCallResult{
+			Content: []Content{
+				{
+					Type: "text",
+					Text: string(resultJSON),
+				},
+			},
+		},
+	}
+}
+
+// handleDelete deletes an entity
+func (s *Server) handleDelete(ctx context.Context, id interface{}, args map[string]interface{}) *JSONRPCResponse {
+	endpoint, ok := args["endpoint"].(string)
+	if !ok {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: endpoint is required",
+			},
+		}
+	}
+
+	key, ok := args["key"].(string)
+	if !ok {
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params: key is required",
+			},
+		}
+	}
+
+	// Build endpoint with key
+	fullEndpoint := fmt.Sprintf("%s('%s')", endpoint, key)
+
+	// Delete entity using DELETE
+	err := s.client.Delete(ctx, fullEndpoint)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Failed to delete entity '%s' from endpoint '%s': %s", key, endpoint, err.Error())
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      id,
+			Error: &JSONRPCError{
+				Code:    -32000,
+				Message: "Delete operation failed",
+				Data:    errorMsg,
+			},
+		}
+	}
+
+	resultJSON, _ := json.Marshal(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Entity '%s' deleted successfully from endpoint '%s'", key, endpoint),
 	})
 
 	return &JSONRPCResponse{

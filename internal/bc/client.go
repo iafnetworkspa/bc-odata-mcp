@@ -507,3 +507,116 @@ func (c *Client) Query(ctx context.Context, endpoint string, includePagination b
 
 	return odataResp.Value, nil
 }
+
+// Post creates a new entity using POST
+func (c *Client) Post(ctx context.Context, endpoint string, data []byte) (map[string]interface{}, error) {
+	token, err := c.auth.GetToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token: %w", err)
+	}
+
+	fullURL := c.baseURL + endpoint
+	req, err := http.NewRequestWithContext(ctx, "POST", fullURL, strings.NewReader(string(data)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("POST request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("POST failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return result, nil
+}
+
+// Patch updates an entity using PATCH
+func (c *Client) Patch(ctx context.Context, endpoint string, data []byte, etag string) (map[string]interface{}, error) {
+	token, err := c.auth.GetToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token: %w", err)
+	}
+
+	fullURL := c.baseURL + endpoint
+	req, err := http.NewRequestWithContext(ctx, "PATCH", fullURL, strings.NewReader(string(data)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if etag != "" {
+		req.Header.Set("If-Match", etag)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("PATCH request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("PATCH failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return result, nil
+}
+
+// Delete deletes an entity using DELETE
+func (c *Client) Delete(ctx context.Context, endpoint string) error {
+	token, err := c.auth.GetToken()
+	if err != nil {
+		return fmt.Errorf("failed to get token: %w", err)
+	}
+
+	fullURL := c.baseURL + endpoint
+	req, err := http.NewRequestWithContext(ctx, "DELETE", fullURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("DELETE request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("DELETE failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
