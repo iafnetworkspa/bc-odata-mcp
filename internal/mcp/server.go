@@ -1245,6 +1245,7 @@ func (s *Server) handleCheckOrderStatus(ctx context.Context, id interface{}, arg
 	if err != nil {
 		// If ODV_List query fails, we'll still try invoices
 		// Log the error but continue
+		log.Error().Err(err).Str("order_no", orderNo).Msg("Error querying ODV_List, will try invoices")
 	}
 
 	if len(odvResults) > 0 {

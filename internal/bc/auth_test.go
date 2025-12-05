@@ -75,7 +75,7 @@ func TestAuth_GetToken_WithExpiredToken(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer server.Close()
 
@@ -142,7 +142,7 @@ func TestAuth_fetchToken_Success(t *testing.T) {
 		}
 
 		// Verify form data
-		r.ParseForm()
+		_ = r.ParseForm()
 		if r.Form.Get("grant_type") != "client_credentials" {
 			t.Errorf("Expected grant_type client_credentials, got %s", r.Form.Get("grant_type"))
 		}
@@ -154,7 +154,7 @@ func TestAuth_fetchToken_Success(t *testing.T) {
 			Scope:       "https://api.businesscentral.dynamics.com/.default",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer server.Close()
 
@@ -184,7 +184,7 @@ func TestAuth_fetchToken_Success(t *testing.T) {
 func TestAuth_fetchToken_HTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Bad Request"))
+		_, _ = w.Write([]byte("Bad Request"))
 	}))
 	defer server.Close()
 
@@ -208,7 +208,7 @@ func TestAuth_fetchToken_HTTPError(t *testing.T) {
 func TestAuth_fetchToken_InvalidJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("invalid json"))
+		_, _ = w.Write([]byte("invalid json"))
 	}))
 	defer server.Close()
 
@@ -238,7 +238,7 @@ func TestAuth_refreshToken_DoubleCheck(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer server.Close()
 

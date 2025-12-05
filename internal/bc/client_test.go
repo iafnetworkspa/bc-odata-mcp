@@ -50,7 +50,7 @@ func TestClient_Query_Success(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
@@ -66,7 +66,7 @@ func TestClient_Query_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(odataResp)
+		_ = json.NewEncoder(w).Encode(odataResp)
 	}))
 	defer odataServer.Close()
 
@@ -106,7 +106,7 @@ func TestClient_Query_WithPagination(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
@@ -131,7 +131,7 @@ func TestClient_Query_WithPagination(t *testing.T) {
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(odataResp)
+		_ = json.NewEncoder(w).Encode(odataResp)
 	}))
 	odataServerURL = odataServer.URL
 	defer odataServer.Close()
@@ -169,14 +169,14 @@ func TestClient_Query_HTTPError(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
 	// Mock OData server returning error
 	odataServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":{"message":"Not Found"}}`))
+		_, _ = w.Write([]byte(`{"error":{"message":"Not Found"}}`))
 	}))
 	defer odataServer.Close()
 
@@ -210,14 +210,14 @@ func TestClient_Query_InvalidJSON(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
 	// Mock OData server returning invalid JSON
 	odataServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("invalid json"))
+		_, _ = w.Write([]byte("invalid json"))
 	}))
 	defer odataServer.Close()
 
@@ -251,7 +251,7 @@ func TestClient_Get_Success(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
@@ -261,7 +261,7 @@ func TestClient_Get_Success(t *testing.T) {
 			t.Errorf("Expected GET, got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"value":[]}`))
+		_, _ = w.Write([]byte(`{"value":[]}`))
 	}))
 	defer odataServer.Close()
 
@@ -299,7 +299,7 @@ func TestClient_GetPaginated_WithTopLimit(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
@@ -313,7 +313,7 @@ func TestClient_GetPaginated_WithTopLimit(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(odataResp)
+		_ = json.NewEncoder(w).Encode(odataResp)
 	}))
 	defer odataServer.Close()
 
@@ -350,7 +350,7 @@ func TestClient_GetPaginated_NoNextLink(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
@@ -372,7 +372,7 @@ func TestClient_GetPaginated_NoNextLink(t *testing.T) {
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(odataResp)
+		_ = json.NewEncoder(w).Encode(odataResp)
 	}))
 	defer odataServer.Close()
 
@@ -409,7 +409,7 @@ func TestClient_Post_Success(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
@@ -420,7 +420,7 @@ func TestClient_Post_Success(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"No":"001","Name":"Test Item"}`))
+		_, _ = w.Write([]byte(`{"No":"001","Name":"Test Item"}`))
 	}))
 	defer odataServer.Close()
 
@@ -458,7 +458,7 @@ func TestClient_Patch_Success(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
@@ -468,7 +468,7 @@ func TestClient_Patch_Success(t *testing.T) {
 			t.Errorf("Expected PATCH, got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"No":"001","Name":"Updated Item"}`))
+		_, _ = w.Write([]byte(`{"No":"001","Name":"Updated Item"}`))
 	}))
 	defer odataServer.Close()
 
@@ -506,7 +506,7 @@ func TestClient_Patch_WithETag(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
@@ -516,7 +516,7 @@ func TestClient_Patch_WithETag(t *testing.T) {
 			t.Errorf("Expected If-Match header W/\"test-etag\", got %s", r.Header.Get("If-Match"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"No":"001","Name":"Updated Item"}`))
+		_, _ = w.Write([]byte(`{"No":"001","Name":"Updated Item"}`))
 	}))
 	defer odataServer.Close()
 
@@ -554,7 +554,7 @@ func TestClient_Delete_Success(t *testing.T) {
 			ExpiresIn:   3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tokenResp)
+		_ = json.NewEncoder(w).Encode(tokenResp)
 	}))
 	defer oauthServer.Close()
 
