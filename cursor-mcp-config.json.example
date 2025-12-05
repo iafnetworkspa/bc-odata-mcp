@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "bc-odata": {
+      "command": "C:\\path\\to\\bc-odata-mcp.exe",
+      "env": {
+        "BC_GRANT_TYPE": "client_credentials",
+        "BC_CLIENT_ID": "your_client_id_here",
+        "BC_CLIENT_SECRET": "your_client_secret_here",
+        "BC_SCOPE_API": "https://api.businesscentral.dynamics.com/.default",
+        "BC_TOKEN_URL": "https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token",
+        "BC_CONTENT_TYPE": "application/x-www-form-urlencoded",
+        "BC_BASE_PATH": "https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/api/v2.0/companies({COMPANY_ID})/",
+        "BC_TENANT_ID": "your_tenant_id_here",
+        "BC_ENVIRONMENT": "Production",
+        "BC_COMPANY": "your_company_id_here",
+        "BC_API_TIMEOUT": "90"
+      }
+    }
+  }
+}
+
