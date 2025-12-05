@@ -43,6 +43,7 @@ jobs:
         if: always() && hashFiles('coverage.out') != ''
         continue-on-error: true
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage.out
           flags: unittests
           name: codecov-umbrella
