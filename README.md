@@ -36,7 +36,20 @@ go mod download
 
 3. Compila il server:
 ```bash
+# Su Windows
+go build -o bc-odata-mcp.exe ./cmd/server
+
+# Su Linux/macOS
 go build -o bc-odata-mcp ./cmd/server
+```
+
+Oppure usa il Makefile:
+```bash
+# Su Windows
+make build-windows
+
+# Su Linux/macOS
+make build-linux  # o make build-darwin per macOS
 ```
 
 ### Da Release
@@ -208,6 +221,7 @@ bc-odata-mcp/
 ├── CHANGELOG.md                 # Changelog (auto-generated)
 ├── config.example.env           # Example configuration
 ├── go.mod                       # Go dependencies
+├── Makefile                     # Build automation
 └── README.md                    # Questo file
 ```
 
@@ -224,7 +238,16 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./bc-odata-mcp
 ### Build per produzione
 
 ```bash
+# Su Windows
+go build -ldflags="-s -w" -o bc-odata-mcp.exe ./cmd/server
+
+# Su Linux/macOS
 go build -ldflags="-s -w" -o bc-odata-mcp ./cmd/server
+```
+
+Oppure usa il Makefile:
+```bash
+make build-windows  # o make build-linux, make build-darwin
 ```
 
 ### Conventional Commits
